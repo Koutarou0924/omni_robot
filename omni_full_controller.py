@@ -17,7 +17,7 @@ except Exception as e:
 def omni_inverse_kinematics(vx, vy, omega):
   """ご指定の式をベースにした逆運動学計算"""
   theta = [math.radians(90), math.radians(210), math.radians(330)]
-  L = 0.8  # 機体サイズの係数
+  L = 0.5  # 機体サイズの係数
 
   v1 = vx * math.cos(theta[0]) + vy * math.sin(theta[0]) + L * omega
   v2 = vx * math.cos(theta[1]) + vy * math.sin(theta[1]) + L * omega
