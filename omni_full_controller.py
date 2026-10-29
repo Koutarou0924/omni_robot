@@ -34,27 +34,57 @@ def omni_inverse_kinematics(vx, vy, omega):
 
 
 def send_motion(vx, vy, omega):
+  global ser
   p1, p2, p3 = omni_inverse_kinematics(vx, vy, omega)
   command = f"{p1},{p2},{p3}\n"
-  ser.write(command.encode("utf-8"))
-  time.sleep(0.02)
-  read_serial_response()
+
+  try:
+    ser.write(command.encode("utf-8"))
+    time.sleep(0.02)
+    read_serial_response()
+  except (serial.SerialException, OSError) as e:
+    print(f"\n[警告] 通信が切断されました: {e}")
+    print("再接続を試みています...")
+    reconnect_serial()
 
 
 def get_encoders():
-  """Teensyからエンコーダのパルス数を取得する"""
-  ser.write(b"ENC\n")
-  time.sleep(0.02)
-  start_time = time.time()
-  while time.time() - start_time < 0.2:
-    if ser.in_waiting > 0:
-      line = ser.readline().decode("utf-8").strip()
-      if line.startswith("ENC_DATA:"):
-        parts = line.replace("ENC_DATA:", "").split(",")
-        if len(parts) == 3:
-          return int(parts[0]), int(parts[1]), int(parts[2])
-    time.sleep(0.01)
+  global ser
+  try:
+    ser.write(b"ENC\n")
+    time.sleep(0.02)
+    start_time = time.time()
+    while time.time() - start_time < 0.2:
+      if ser.in_waiting > 0:
+        line = ser.readline().decode("utf-8").strip()
+        if line.startswith("ENC_DATA:"):
+          parts = line.replace("ENC_DATA:", "").split(",")
+          if len(parts) == 3:
+            return int(parts[0]), int(parts[1]), int(parts[2])
+      time.sleep(0.01)
+  except (serial.SerialException, OSError):
+    print("\n[警告] エンコーダ取得時に通信エラーが発生しました。")
+    reconnect_serial()
   return None
+
+
+def reconnect_serial():
+  """シリアルポートの再接続を行う関数"""
+  global ser
+  try:
+    ser.close()
+  except:
+    pass
+
+  while True:
+    try:
+      time.sleep(1)
+      ser = serial.Serial(PORT, BAUD_RATE, timeout=0.1)
+      time.sleep(2)  # Teensyの再起動待ち
+      print("[復旧成功] Teensyとの再接続に成功しました！\n")
+      break
+    except:
+      print(".", end="", flush=True)
 
 
 def read_serial_response():
