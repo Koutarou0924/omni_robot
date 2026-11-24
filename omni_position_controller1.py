@@ -16,6 +16,9 @@ if __name__ == "__main__":
         # 2. コントローラーの初期化
         robot = omni_position_control1.OmniPositionController(ser)
         
+        print(robot.get_encoder_pulses())
+        ser.write(b"0.3,0.0,0.0\n")
+
         # 3. 相対位置制御の実行
         print("Moving forward 0.5 meters...")
         robot.move_straight_relative(target_distance_m=0.5, speed=0.3)
