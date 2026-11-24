@@ -14,14 +14,17 @@ class OmniPositionController:
         self.L = 0.15 
 
     def get_encoder_pulses(self):
-        """Teensyから 'ENC' コマンドで現在のパルス数を取得する例"""
+        """Teensyからの生データを確認するデバッグ用関数"""
         self.serial.write(b"ENC\n")
-        response = self.serial.readline().decode('utf-8').strip()
-        # 応答例: "120, -45, 300"
+        response = self.serial.readline()
+        print(f"【デバッグ】Teensyからの生受信データ: {response}") # 生データをそのまま表示
+        
         try:
-            p1, p2, p3 = map(int, response.split(','))
+            response_str = response.decode('utf-8').strip()
+            p1, p2, p3 = map(int, response_str.split(','))
             return p1, p2, p3
-        except ValueError:
+        except Exception as e:
+            print(f"【エラー】パース失敗: {e}")
             return 0, 0, 0
 
     def move_straight_relative(self, target_distance_m, speed=0.3):
