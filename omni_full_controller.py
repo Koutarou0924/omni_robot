@@ -5,6 +5,11 @@ import serial
 PORT = "/dev/ttyACM0"
 BAUD_RATE = 115200
 
+# --- 相対位置制御用のパラメータ（実機に合わせて調整してください） ---
+WHEEL_RADIUS = 0.05   # タイヤ半径 [m] (例: 3cm)
+PPR = 1200            # 1回転あたりのエンコーダパルス数（ギア比含む）
+DIST_PER_PULSE = (2.0 * math.pi * WHEEL_RADIUS) / PPR
+
 try:
   ser = serial.Serial(PORT, BAUD_RATE, timeout=0.1)
   time.sleep(2)
@@ -68,6 +73,72 @@ def get_encoders():
   return None
 
 
+def move_straight_relative(target_distance_m, speed=1):
+    """
+    指定した距離（メートル）だけ直進する相対位置制御（改善版）
+    """
+    target_pulses = int(target_distance_m / DIST_PER_PULSE)
+    
+    encs_start = get_encoders()
+    if not encs_start:
+        print("  [エラー] スタート時のエンコーダ取得に失敗しました。")
+        return
+        
+    start_p1, start_p2, start_p3 = encs_start
+    Kp = 0.0015       # ゲインを少しマイルドに調整
+    MIN_SPEED = 1  # 最低速度（これ以下ではモーターがうなる場合、直前でカットする）
+    
+    print(f"-> 相対移動開始: {target_distance_m} m (目標パルス差: {target_pulses})")
+    
+    while True:
+        encs_current = get_encoders()
+        if not encs_current:
+            continue
+            
+        current_p1, current_p2, current_p3 = encs_current
+        
+        # --- このロボットの実際の動きに合わせた差分計算 ---
+        # スタート時からの変化量を求める
+        d1 = current_p1 - start_p1
+        d2 = current_p2 - start_p2  # 減る方向（マイナス）
+        d3 = current_p3 - start_p3  # 増える方向（プラス）
+        
+        # 前進したとき、d2はマイナス、d3はプラスになるため、
+        # 「どれだけ進んだか」のトータル量は、マイナスを反転させて足し合わせる
+        # （例: M2の減少分とM3の増加分を合算して、全体の移動量とする）
+        forward_progress = (abs(d2) + abs(d3)) / 2.0 
+        
+        error = target_pulses - forward_progress
+        
+        # 【重要】目標に十分近づいたら（例: 5パルス以内）、そこで即座に終了して停止
+        if abs(error) <= 5:
+            print("  [到達] 目標パルスに到達しました。")
+            break
+            
+        # P制御による速度指令計算
+        v_cmd = error * Kp
+        
+        # 速度の最大・最小制限
+        # ※目標付近（誤差が小さいとき）は、最低速度に張り付かせず、そのまま小さな値にして自然に減速させる
+        if abs(v_cmd) < MIN_SPEED:
+            # ただし、遠く離れているのに動かない現象を防ぐため、誤差がある程度ある時だけ最低速度を適用
+            if abs(error) > 15:
+                v_cmd = MIN_SPEED if v_cmd > 0 else -MIN_SPEED
+            else:
+                # 目標間近では極低速を許容（あるいはそのまま出力）
+                pass
+                
+        v_cmd = max(min(v_cmd, speed), -speed)
+        
+        # 直進指令を送信
+        send_motion(v_cmd, 0.0, 0.0)
+        time.sleep(0.03)
+        
+    # 完全に停止する指令を送る
+    send_motion(0.0, 0.0, 0.0)
+    print("  [完了] 停止しました。")
+
+
 def reconnect_serial():
   """シリアルポートの再接続を行う関数"""
   global ser
@@ -121,6 +192,19 @@ def main():
       if not user_input:
         continue
 
+# --- （既存の if文の下あたりに追加） ---
+      
+      # 例: "m,0.5" と入力されたら 0.5メートル前進
+      # 例: "m,-0.3" と入力されたら 0.3メートル後退
+      if user_input.startswith("m,"):
+        try:
+          parts = user_input.split(",")
+          distance = float(parts[1])
+          move_straight_relative(distance)
+        except (IndexError, ValueError):
+          print("  [エラー] 形式が違います。例: m,0.5 （0.5メートル前進）")
+        continue
+        
       # キー入力ショートカットの処理
       if user_input == "w":
         print("-> 前進")
