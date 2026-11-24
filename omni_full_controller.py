@@ -93,8 +93,7 @@ def read_serial_response():
     if line:
       print(f"    Teensy -> {line}")
 
-
-if __name__ == "__main__":
+def main():
   try:
     print("\n=== 3輪オムニホイール 統合コントロールシステム ===")
     print("【操作方法の選び方】")
@@ -173,3 +172,6 @@ if __name__ == "__main__":
     ser.write(b"0,0,0\n")
     ser.close()
     print("\n安全に終了しました。")
+
+if __name__ == "__main__":
+  main()
