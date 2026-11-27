@@ -2,14 +2,16 @@ import math
 import time
 import serial
 
+# --- Teensyとのシリアル通信設定 ---
 PORT = "/dev/ttyACM0"
 BAUD_RATE = 115200
 
-# --- 相対位置制御用のパラメータ（実機に合わせて調整してください） ---
-WHEEL_RADIUS = 0.05   # タイヤ半径 [m] (例: 3cm)
-PPR = 1200            # 1回転あたりのエンコーダパルス数（ギア比含む）
+# --- 相対位置制御用のパラメータ（実機に合わせて調整） ---
+WHEEL_RADIUS = 0.05   # タイヤ半径 [m]
+PPR = 1200            # 1回転あたりのエンコーダパルス数
 DIST_PER_PULSE = (2.0 * math.pi * WHEEL_RADIUS) / PPR
 
+# Teensyとのシリアル通信を確立
 try:
   ser = serial.Serial(PORT, BAUD_RATE, timeout=0.1)
   time.sleep(2)
@@ -19,8 +21,8 @@ except Exception as e:
   exit()
 
 
+#--- オムニホイールの逆運動学計算 ---
 def omni_inverse_kinematics(vx, vy, omega):
-  """ご指定の式をベースにした逆運動学計算"""
   theta = [math.radians(90), math.radians(210), math.radians(330)]
   L = 0.3  # 機体サイズの係数
 
@@ -38,6 +40,7 @@ def omni_inverse_kinematics(vx, vy, omega):
   return p1, p2, p3
 
 
+#--- Teensyに速度指令を送信する関数 ---
 def send_motion(vx, vy, omega):
   global ser
   p1, p2, p3 = omni_inverse_kinematics(vx, vy, omega)
@@ -53,6 +56,7 @@ def send_motion(vx, vy, omega):
     reconnect_serial()
 
 
+#--- Teensyからエンコーダ値を取得する関数 ---
 def get_encoders():
   global ser
   try:
@@ -73,10 +77,8 @@ def get_encoders():
   return None
 
 
+#--- 相対位置制御で直進する関数 ---
 def move_straight_relative(target_distance_m, speed=1):
-    """
-    指定した距離（メートル）だけ直進する相対位置制御（改善版）
-    """
     target_pulses = int(target_distance_m / DIST_PER_PULSE)
     
     encs_start = get_encoders()
@@ -85,8 +87,8 @@ def move_straight_relative(target_distance_m, speed=1):
         return
         
     start_p1, start_p2, start_p3 = encs_start
-    Kp = 0.0015       # ゲインを少しマイルドに調整
-    MIN_SPEED = 1  # 最低速度（これ以下ではモーターがうなる場合、直前でカットする）
+    Kp = 0.0015
+    MIN_SPEED = 1  # 最低速度（これ以下ではモーターがうなる場合、調整）
     
     print(f"-> 相対移動開始: {target_distance_m} m (目標パルス差: {target_pulses})")
     
@@ -97,20 +99,17 @@ def move_straight_relative(target_distance_m, speed=1):
             
         current_p1, current_p2, current_p3 = encs_current
         
-        # --- このロボットの実際の動きに合わせた差分計算 ---
+        # --- ロボットの実際の動きに合わせた差分計算 ---
         # スタート時からの変化量を求める
         d1 = current_p1 - start_p1
-        d2 = current_p2 - start_p2  # 減る方向（マイナス）
-        d3 = current_p3 - start_p3  # 増える方向（プラス）
+        d2 = current_p2 - start_p2
+        d3 = current_p3 - start_p3
         
-        # 前進したとき、d2はマイナス、d3はプラスになるため、
-        # 「どれだけ進んだか」のトータル量は、マイナスを反転させて足し合わせる
-        # （例: M2の減少分とM3の増加分を合算して、全体の移動量とする）
         forward_progress = (abs(d2) + abs(d3)) / 2.0 
         
         error = target_pulses - forward_progress
         
-        # 【重要】目標に十分近づいたら（例: 5パルス以内）、そこで即座に終了して停止
+        # 【重要】目標に十分近づいたら、そこで即座に終了して停止
         if abs(error) <= 5:
             print("  [到達] 目標パルスに到達しました。")
             break
@@ -139,8 +138,8 @@ def move_straight_relative(target_distance_m, speed=1):
     print("  [完了] 停止しました。")
 
 
+#--- Teensyとのシリアル通信が切断された場合の再接続処理 ---
 def reconnect_serial():
-  """シリアルポートの再接続を行う関数"""
   global ser
   try:
     ser.close()
@@ -158,12 +157,15 @@ def reconnect_serial():
       print(".", end="", flush=True)
 
 
+#--- Teensyからの応答を読み取る関数 ---
 def read_serial_response():
   while ser.in_waiting > 0:
     line = ser.readline().decode("utf-8").strip()
     if line:
       print(f"    Teensy -> {line}")
 
+
+#--- メインループ ---
 def main():
   try:
     print("\n=== 3輪オムニホイール 統合コントロールシステム ===")
@@ -191,8 +193,6 @@ def main():
 
       if not user_input:
         continue
-
-# --- （既存の if文の下あたりに追加） ---
       
       # 例: "m,0.5" と入力されたら 0.5メートル前進
       # 例: "m,-0.3" と入力されたら 0.3メートル後退
